@@ -1,171 +1,166 @@
-# PPT Generator - AI-Powered Slidev Presentation Builder
+# Agentic Slidev Presentation Generator
 
-An agentic AI application that generates Slidev presentations grounded in Notion pages, built with LangGraph.
+An agentic AI application that generates [Slidev](https://sli.dev) presentations grounded
+in a Notion knowledge base. A user picks a generation mode and a topic; a multi-agent
+pipeline plans, retrieves grounding context from Notion, optionally fills gaps via web
+search, and writes a complete Slidev deck (`slides.md`) — which is then rendered as a real
+Slidev presentation.
 
-## Stack
+---
 
-- **AI layer:** Python, LangGraph, LangChain, ChatGoogleGenerativeAI (Gemini)
-- **Backend:** FastAPI
-- **Frontend:** Plain HTML/CSS/JS (no build step)
-- **Slides:** Slidev (Node.js) - black box viewer
+## What it does
+
+Given a query like *"Meridian Aurora Nexus enterprise AI platform"*, the system:
+
+1. Validates the request (a guardrail rejects harmful or non-presentation queries).
+2. Plans a 10-slide outline.
+3. Retrieves grounding content from a configured Notion page and judges whether it
+   sufficiently covers the outline.
+4. If gaps remain, escalates to Google Search grounding to fill them.
+5. Generates a fully grounded 10-slide Slidev deck, using specific facts and figures from
+   the source rather than invented content.
+6. Renders the deck as a real Slidev static site for viewing.
+
+---
+
+## Architecture
+
+The design principle is **one shared tool layer; modes are configuration over it.** All
+modes use the same agents and tools — a mode simply decides which agents are active, which
+model is used, and what extra capabilities (images, clarifying questions) are switched on.
+
+### The agent pipeline (LangGraph)
+
+```
+START
+  → intent_detector        (input guardrail: valid presentation request?)
+       ├─ invalid → END     (returns a polite message; no generation)
+       └─ valid → manager   (plans title + 10 slide topics)
+                → context_retriever   (reads Notion; judges sufficiency)
+                     ├─ sufficient   → ppt_generator
+                     └─ insufficient → web_search → ppt_generator
+                → ppt_generator       (writes grounded DeckSpec → slides.md)
+                → END
+```
+
+Each agent is a plain function node in a LangGraph `StateGraph`, with structured outputs
+enforced via Pydantic models (`with_structured_output`). Web search uses Gemini's built-in
+Google Search grounding. No content is parsed from free-form JSON — every inter-agent
+contract is a typed schema.
+
+### Modes
+
+| Mode | Agents | Model | Slides | Extra |
+|------|--------|-------|--------|-------|
+| fast | guardrail → manager → context → (web) → ppt | Flash + Pro | 10 | — |
+| pro  | fast + image generation | Flash + Pro | 10 | AI-generated slide images |
+| max  | pro + research | Flash + Pro | 10 | asks clarifying questions first |
+
+(`fast` is fully implemented; `pro` and `max` build on it as supersets.)
+
+### Project layout
+
+```
+ai/
+  llm.py              # LLM factory: Vertex AI or Gemini API via one env switch
+  config.yaml         # models, slide count, per-mode agent/tool map
+  config_env.py       # loads .env once, imported first by all entry points
+  src/
+    graph.py          # builds & runs the LangGraph pipeline
+    state.py          # GraphState (typed graph state)
+    schemas.py        # all Pydantic models
+  agents/             # one file per agent (intent_detector, manager, ...)
+  agents_prompts/     # one system prompt (.txt) per agent
+  tools/              # notion_reader, slides_writer, web_search, image_gen
+  utils/              # logger, prompt loader, AppError
+backend/
+  main.py             # FastAPI app + endpoints + global exception handlers
+  mode_handler.py     # resolves a mode and runs the right pipeline
+  render_fallback.py  # non-Slidev HTML viewer (see Known Issues)
+frontend/             # plain HTML/CSS/JS UI
+slidev/               # pristine Slidev project; only slides.md is written by the app
+logs/                 # rotating application logs
+```
+
+---
+
+## Three design decisions
+
+1. **Slidev as the output format.** The app generates a Markdown `slides.md`, not a binary
+   `.pptx`. This keeps generation simple and version-controllable, makes the agent's output
+   directly inspectable, and lets Slidev render a polished deck and export to PDF/PPTX.
+
+2. **Notion as the context layer.** Generation is grounded in a Notion page rather than the
+   model's general knowledge. The `context_retriever` reads the page and judges coverage; if
+   the source is insufficient, the pipeline escalates to web search. This makes output
+   factual and verifiable — every figure in a generated slide traces back to the source.
+
+3. **LangGraph for agentic orchestration.** A typed `StateGraph` with conditional edges
+   gives explicit, debuggable control flow (the guardrail short-circuit and the
+   sufficiency-based web-search escalation are real branches), rather than an opaque
+   agent-executor loop.
+
+---
 
 ## Setup
 
-### 1. Prerequisites
+### Prerequisites
+- Python 3.12, Node.js **20 or 22 LTS** (see Known Issues re: Node 24)
+- A Google Cloud project with Vertex AI enabled (or a Gemini API key)
+- A Notion integration token and a shared Notion page
 
-- Python 3.10+
-- Node.js 18+
-- Google Cloud project with Vertex AI enabled OR Gemini API key
-- Notion integration and page access
-
-### 2. Install Python Dependencies
-
+### 1. Python environment
 ```bash
-# Create and activate virtual environment (if not already done)
 python -m venv .venv
-# On Windows:
-.venv\Scripts\activate
-# On Unix/Mac:
-source .venv/bin/activate
-
-# Install dependencies
+.\.venv\Scripts\Activate.ps1        # Windows
 pip install -r requirements.txt
 ```
 
-### 3. Configure Environment
-
-Edit `.env` with your credentials:
-
-```bash
-# Notion
-NOTION_API_KEY=ntn_xxxxx  # Your Notion integration token
-NOTION_PAGE_ID=xxxxx      # Your Notion page ID (32-char hex, no dashes)
+### 2. Environment variables (`.env`)
+```
+NOTION_API_KEY=ntn_...
+NOTION_PAGE_ID=<your page id>
 
 # LLM backend switch
-USE_VERTEX=true           # true for Vertex AI, false for Gemini API
-
-# If USE_VERTEX=true:
-GOOGLE_CLOUD_PROJECT=your-project-id
+USE_VERTEX=true
+GOOGLE_CLOUD_PROJECT=<project id>
 GOOGLE_CLOUD_LOCATION=us-central1
+GEMINI_API_KEY=                     # only if USE_VERTEX=false
 
-# If USE_VERTEX=false:
-GEMINI_API_KEY=xxxxx
-
-# Paths / logging
 SLIDEV_DIR=./slidev
 LOG_LEVEL=INFO
 ```
+For Vertex, authenticate once: `gcloud auth application-default login`.
+Share your Notion page with the integration (page → ••• → Connections → add it).
 
-### 4. Set Up Slidev (One-time, manual)
-
+### 3. Slidev project
 ```bash
-# From project root
-npm create slidev@latest slidev
-
-# When prompted:
-# - Project name: slidev
-# - Install dependencies: Yes
-# - Use pnpm: No (use npm)
-
-# Start the Slidev dev server
-cd slidev
-npm run dev
+npm create slidev@latest slidev      # one-time scaffold; do not edit its internals
+cd slidev && npm install
 ```
 
-Keep the Slidev server running at http://localhost:3030. **Never edit files in `slidev/` except `slides.md`.**
-
-## Phase 0 - Foundation (Current)
-
-### What's Built
-
-1. ✓ Directory structure (`ai/`, `backend/`, `frontend/`, `logs/`)
-2. ✓ Logger (`ai/utils/logger.py`) with file + console handlers
-3. ✓ LLM factory (`ai/llm.py`) with Vertex/API backend switch
-4. ✓ Notion reader (`ai/tools/notion_reader.py`) with pagination
-5. ✓ Configuration files (`.env`, `config.yaml`, `requirements.txt`, `.gitignore`)
-
-### Phase 0 Gate: Verification Tests
-
-**Test 1: LLM Connection**
-
+### 4. Run
 ```bash
-python test_llm.py
-```
-
-Expected: LLM responds with "WORKING" ✓
-
-**Test 2: Notion Reader**
-
-```bash
-python test_notion.py
-```
-
-Expected: Prints text content from your Notion page ✓
-
-**Both tests must pass to proceed to Phase 1.**
-
-## Project Structure
-
-```
-ppt_gen/
-  ai/
-    __init__.py
-    llm.py                    # LLM factory (Vertex/API switch)
-    config.yaml               # Models, slide counts, per-mode config
-    src/
-      (Phase 1+: graph.py, state.py, schemas.py)
-    agents/
-      (Phase 1+: agent modules)
-    agents_prompts/
-      (Phase 1+: system prompt .txt files)
-    tools/
-      __init__.py
-      notion_reader.py        # ✓ Notion page context reader
-      (Phase 1+: web_search_tool.py, slides_writer.py, image_gen.py)
-    utils/
-      __init__.py             # AppError exception class
-      logger.py               # ✓ Shared logger
-      (Phase 1+: prompt_loader.py)
-  backend/
-    (Phase 1+: main.py, mode_handler.py)
-  frontend/
-    (Phase 2+: index.html, style.css, app.js)
-  slidev/                     # DO NOT TOUCH (except slides.md)
-  logs/                       # Auto-generated logs (gitignored)
-  .env                        # ✓ Environment variables
-  .gitignore                  # ✓
-  requirements.txt            # ✓
-  test_llm.py                 # ✓ Phase 0 verification
-  test_notion.py              # ✓ Phase 0 verification
-  CLAUDE.md                   # Project rules
-  SPECS.md                    # Build specification
-  README.md                   # This file
-```
-
-## Development Phases
-
-- **Phase 0** ✓ Foundation (current - LLM + Notion work)
-- **Phase 1** - Fast mode, no frontend (5 agents, LangGraph, FastAPI)
-- **Phase 2** - Minimal frontend (HTML/CSS/JS UI)
-- **Phase 3** - Streaming (SSE progress)
-- **Phase 4** - Pro mode (image generation)
-- **Phase 5** - Max mode (clarifying questions)
-
-Each phase is a complete, demoable submission. Commit after each phase passes.
-
-## Running the Backend (Phase 1+)
-
-```bash
-# From project root, with .venv activated
+# backend (from project root)
 uvicorn backend.main:app --reload
+
+# frontend (separate terminal)
+cd frontend && python -m http.server 3000
+# open http://localhost:3000
 ```
 
-API will be at http://localhost:8000
+Enter a topic, generate, and render the Slidev deck.
 
-## Rules
+---
 
-- Read `CLAUDE.md` and `SPECS.md` before making changes
-- One change at a time, commit after working phases
-- Never touch `slidev/` internals (except `slides.md`)
-- Use relative paths only, no hardcoded absolute paths
-- Never create duplicate structures
+## Known issues
+
+- **Slidev dev server / `slidev export` fail on the development machine** with a Vite
+  path-resolution error (`Failed to resolve import .../conditional-styles`). This is an
+  environment-specific Windows + Vite bug (reproduced on a clean scaffold under both Node 22
+  and Node 24), **not** a problem with generated decks: the produced `slides.md` is valid
+  Slidev and renders correctly elsewhere.
+  - **Rendering path that works here:** `slidev build` (static build) succeeds and is what
+    the app uses to render decks for viewing.
+  - **Fallbacks:** `backend/render_fallback.py` produces a dependency-free HTML view of any
+    deck; the deck also renders normally in Slidev on Linux/WSL or a clean environment.

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PPT Generator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>AI Presentation Generator</h1>
+            <p class="subtitle">Multi-agent deck generation grounded in Notion</p>
+        </header>
+
+        <!-- Mode Selection -->
+        <section class="section">
+            <h2>1. Select Mode</h2>
+            <div id="modes-container" class="modes-grid">
+                <div class="loading-placeholder">Loading modes...</div>
+            </div>
+        </section>
+
+        <!-- Query Input -->
+        <section class="section">
+            <h2>2. Describe Your Presentation</h2>
+            <div class="examples">
+                <span class="example-label">Examples:</span>
+                <button class="example-chip" data-query="Meridian Aurora Nexus enterprise AI platform">
+                    Meridian Aurora Nexus
+                </button>
+                <button class="example-chip" data-query="State of AI in 2026: trends, models, and enterprise adoption">
+                    State of AI in 2026
+                </button>
+            </div>
+            <textarea
+                id="query-input"
+                placeholder="Enter your presentation topic here..."
+                rows="4"
+            ></textarea>
+        </section>
+
+        <!-- Generate Button -->
+        <section class="section">
+            <button id="generate-btn" class="generate-btn" disabled>
+                Generate Presentation
+            </button>
+        </section>
+
+        <!-- Status & Results -->
+        <section id="status-section" class="section hidden">
+            <div id="status-content"></div>
+        </section>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

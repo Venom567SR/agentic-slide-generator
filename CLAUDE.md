@@ -197,3 +197,5 @@ import os
 directly in modules — it is centralized in `config_env.py`.
 
 NEVER make a test accommodate a bug. If a test reveals a name/contract mismatch (env var, schema field, function signature), fix the SOURCE to match the spec — do not edit the test to accept both the right and wrong versions. Tests assert the spec; they don't bend to the code.
+
+Before importing or calling a function/attribute from an existing module, READ that module to confirm the exact name. Do not assume naming conventions (e.g. a `.node` attribute, an `original_error` kwarg). Mismatched names cause AttributeError/TypeError.
