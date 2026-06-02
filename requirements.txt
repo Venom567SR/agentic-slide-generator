@@ -1,0 +1,17 @@
+# Core AI/ML frameworks
+langchain>=1.0.0
+langchain-google-genai>=4.0.0
+langgraph>=0.2.0
+pydantic>=2.0.0
+
+# Notion integration
+notion-client>=2.0.0
+
+# Web framework
+fastapi>=0.115.0
+uvicorn>=0.32.0
+python-multipart>=0.0.9
+
+# Utilities
+python-dotenv>=1.0.0
+pyyaml>=6.0

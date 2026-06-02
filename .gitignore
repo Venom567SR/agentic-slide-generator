@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Slidev - only ignore everything except slides.md and decks/
+slidev/node_modules/
+slidev/.slidev/
+slidev/dist/
+slidev/components/
+slidev/pages/
+slidev/setup/
+slidev/styles/
+slidev/netlify.toml
+slidev/vercel.json
+slidev/package.json
+slidev/package-lock.json
+slidev/pnpm-lock.yaml
+
+# Keep these slidev files
+!slidev/slides.md
+!slidev/decks/
+!slidev/public/
