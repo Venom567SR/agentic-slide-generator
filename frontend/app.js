@@ -20,6 +20,9 @@ const statusContent = document.getElementById('status-content');
 document.addEventListener('DOMContentLoaded', () => {
     loadModes();
     setupEventListeners();
+    // Hide questions/answers controls initially and set label
+    clearQuestionsPanel();
+    updateGenerateButtonLabel();
 });
 
 // Load available modes from API
@@ -59,8 +62,21 @@ function renderModes() {
 
             // Clear questions panel when switching modes
             clearQuestionsPanel();
+
+            // Update generate button label for max vs fast
+            updateGenerateButtonLabel();
         });
     });
+}
+
+// Update the main generate button label depending on selected mode
+function updateGenerateButtonLabel() {
+    if (selectedMode === 'max') {
+        generateBtn.textContent = 'Generate Questions';
+    } else {
+        generateBtn.textContent = 'Generate Presentation';
+    }
+    validateInput();
 }
 
 // Setup event listeners
@@ -83,6 +99,7 @@ function setupEventListeners() {
     generateWithAnswersBtn.addEventListener('click', handleGenerateWithAnswers);
 }
 
+
 // Validate input and enable/disable generate button
 function validateInput() {
     const query = queryInput.value.trim();
@@ -94,14 +111,15 @@ async function handleGenerate() {
     const query = queryInput.value.trim();
     if (query.length < 5) return;
 
-    // MAX MODE: Two-phase flow
+    // Branch by mode BEFORE choosing endpoint
     if (selectedMode === 'max') {
+        // MAX MODE: Two-phase flow - start Phase 1 (questions)
         await handleMaxModePhase1(query);
         return;
     }
 
-    // FAST MODE: Direct generation
-    await generatePresentation(query, selectedMode, null);
+    // FAST MODE: Direct generation against /generate
+    await generatePresentation(query, 'fast', null);
 }
 
 // Max mode Phase 1: Get clarifying questions
@@ -122,6 +140,7 @@ async function handleMaxModePhase1(query) {
             },
             body: JSON.stringify({ query: query })
         });
+        console.log('POST', `${API_BASE_URL}/max/questions`, { query });
 
         if (!response.ok) {
             const error = await response.json();
@@ -152,7 +171,8 @@ async function handleMaxModePhase1(query) {
         // Reset button
         generateBtn.disabled = false;
         generateBtn.classList.remove('loading');
-        generateBtn.textContent = 'Generate Presentation';
+        // Respect current mode when restoring label
+        updateGenerateButtonLabel();
     }
 }
 
@@ -165,7 +185,8 @@ async function handleGenerateWithAnswers() {
     currentQuestions.forEach((q, index) => {
         const input = document.getElementById(`question-${index}`);
         if (input && input.value.trim()) {
-            answers[q.question] = input.value.trim();
+            // q is a string (question text)
+            answers[q] = input.value.trim();
         }
     });
 
@@ -192,15 +213,23 @@ async function generatePresentation(query, mode, answers) {
         'Running AI agents to analyze context and generate slides. This takes about 60 seconds...');
 
     try {
+        // Safety: enforce two-phase requirement for max mode
+        if (mode === 'max' && (!answers || Object.keys(answers).length === 0)) {
+            showStatus('error', 'Missing Answers',
+                'Max mode requires answers to clarifying questions. Please answer the questions first.');
+            return;
+        }
+
         const body = {
             mode: mode,
             query: query
         };
 
-        if (answers) {
+        if (answers && Object.keys(answers).length > 0) {
             body.answers = answers;
         }
 
+        console.log('POST', `${API_BASE_URL}/generate`, body);
         const response = await fetch(`${API_BASE_URL}/generate`, {
             method: 'POST',
             headers: {
@@ -501,21 +530,25 @@ function showStatus(type, title, message) {
 
 // Render clarifying questions panel (Max mode)
 function renderQuestions(questions) {
+    // Backend returns questions as strings. Render accordingly.
     questionsContainer.innerHTML = questions.map((q, index) => `
         <div class="question-item" style="margin-bottom: 1.5rem;">
             <label for="question-${index}" style="display: block; font-weight: 600; margin-bottom: 0.5rem;">
-                ${escapeHtml(q.question)}
+                ${escapeHtml(q)}
             </label>
             <input
                 type="text"
                 id="question-${index}"
-                placeholder="${escapeHtml(q.placeholder || 'Enter your answer...')}"
+                placeholder="${escapeHtml('Enter your answer...')}"
                 style="width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: 6px; font-size: 1rem;"
             />
         </div>
     `).join('');
 
     questionsSection.classList.remove('hidden');
+    // Show the Generate Presentation button below the questions
+    generateWithAnswersBtn.textContent = 'Generate Presentation';
+    generateWithAnswersBtn.style.display = '';
 }
 
 // Clear questions panel
@@ -524,4 +557,9 @@ function clearQuestionsPanel() {
     questionsContainer.innerHTML = '';
     currentQuestions = [];
     generateBtn.style.display = '';
+    // Hide the answers button until questions are generated
+    generateWithAnswersBtn.style.display = 'none';
+
+    // Reset main generate button label according to mode
+    updateGenerateButtonLabel();
 }
