@@ -4,11 +4,15 @@ const API_BASE_URL = 'http://localhost:8000';
 // State
 let selectedMode = 'fast';
 let modes = [];
+let currentQuestions = []; // For Max mode
 
 // DOM Elements
 const modesContainer = document.getElementById('modes-container');
 const queryInput = document.getElementById('query-input');
 const generateBtn = document.getElementById('generate-btn');
+const questionsSection = document.getElementById('questions-section');
+const questionsContainer = document.getElementById('questions-container');
+const generateWithAnswersBtn = document.getElementById('generate-with-answers-btn');
 const statusSection = document.getElementById('status-section');
 const statusContent = document.getElementById('status-content');
 
@@ -52,6 +56,9 @@ function renderModes() {
             selectedMode = card.dataset.mode;
             document.querySelectorAll('.mode-card').forEach(c => c.classList.remove('selected'));
             card.classList.add('selected');
+
+            // Clear questions panel when switching modes
+            clearQuestionsPanel();
         });
     });
 }
@@ -71,6 +78,9 @@ function setupEventListeners() {
 
     // Generate button
     generateBtn.addEventListener('click', handleGenerate);
+
+    // Generate with answers button (Max mode)
+    generateWithAnswersBtn.addEventListener('click', handleGenerateWithAnswers);
 }
 
 // Validate input and enable/disable generate button
@@ -84,24 +94,119 @@ async function handleGenerate() {
     const query = queryInput.value.trim();
     if (query.length < 5) return;
 
+    // MAX MODE: Two-phase flow
+    if (selectedMode === 'max') {
+        await handleMaxModePhase1(query);
+        return;
+    }
+
+    // FAST MODE: Direct generation
+    await generatePresentation(query, selectedMode, null);
+}
+
+// Max mode Phase 1: Get clarifying questions
+async function handleMaxModePhase1(query) {
     // Show loading state
     generateBtn.disabled = true;
     generateBtn.classList.add('loading');
-    generateBtn.textContent = 'Generating...';
+    generateBtn.textContent = 'Loading Questions...';
+
+    showStatus('loading', 'Generating Questions',
+        'Analyzing your query to generate relevant clarifying questions...');
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/max/questions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ query: query })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to generate questions');
+        }
+
+        const result = await response.json();
+
+        if (result.valid === false) {
+            // Query was rejected
+            showStatus('error', 'Query Rejected', result.user_message);
+            clearQuestionsPanel();
+        } else {
+            // Show questions panel
+            currentQuestions = result.questions;
+            renderQuestions(result.questions);
+
+            // Hide status, show questions
+            statusSection.classList.add('hidden');
+
+            // Hide generate button, user will click "Generate with Answers" next
+            generateBtn.style.display = 'none';
+        }
+    } catch (error) {
+        showStatus('error', 'Failed to Load Questions', error.message);
+        clearQuestionsPanel();
+    } finally {
+        // Reset button
+        generateBtn.disabled = false;
+        generateBtn.classList.remove('loading');
+        generateBtn.textContent = 'Generate Presentation';
+    }
+}
+
+// Max mode Phase 2: Generate with answers
+async function handleGenerateWithAnswers() {
+    const query = queryInput.value.trim();
+
+    // Collect answers from input fields
+    const answers = {};
+    currentQuestions.forEach((q, index) => {
+        const input = document.getElementById(`question-${index}`);
+        if (input && input.value.trim()) {
+            answers[q.question] = input.value.trim();
+        }
+    });
+
+    // Validate at least one answer
+    if (Object.keys(answers).length === 0) {
+        showStatus('error', 'No Answers Provided',
+            'Please answer at least one clarifying question before generating.');
+        return;
+    }
+
+    // Generate presentation with answers
+    await generatePresentation(query, 'max', answers);
+}
+
+// Common generation function for both modes
+async function generatePresentation(query, mode, answers) {
+    // Show loading state
+    const btn = mode === 'max' ? generateWithAnswersBtn : generateBtn;
+    btn.disabled = true;
+    btn.classList.add('loading');
+    btn.textContent = 'Generating...';
 
     showStatus('loading', 'Generating Presentation',
         'Running AI agents to analyze context and generate slides. This takes about 60 seconds...');
 
     try {
+        const body = {
+            mode: mode,
+            query: query
+        };
+
+        if (answers) {
+            body.answers = answers;
+        }
+
         const response = await fetch(`${API_BASE_URL}/generate`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-                mode: selectedMode,
-                query: query
-            })
+            body: JSON.stringify(body)
         });
 
         if (!response.ok) {
@@ -117,14 +222,23 @@ async function handleGenerate() {
         } else {
             // Success - display the deck
             await displayDeck(result);
+
+            // Clear questions panel after successful generation
+            clearQuestionsPanel();
         }
     } catch (error) {
         showStatus('error', 'Generation Failed', error.message);
     } finally {
         // Reset button
-        generateBtn.disabled = false;
-        generateBtn.classList.remove('loading');
-        generateBtn.textContent = 'Generate Presentation';
+        btn.disabled = false;
+        btn.classList.remove('loading');
+        btn.textContent = mode === 'max' ? 'Generate with Answers' : 'Generate Presentation';
+
+        // Restore generate button visibility if hidden
+        if (mode === 'max') {
+            generateBtn.style.display = '';
+        }
+
         validateInput();
     }
 }
@@ -383,4 +497,31 @@ function showStatus(type, title, message) {
     `;
 
     statusSection.classList.remove('hidden');
+}
+
+// Render clarifying questions panel (Max mode)
+function renderQuestions(questions) {
+    questionsContainer.innerHTML = questions.map((q, index) => `
+        <div class="question-item" style="margin-bottom: 1.5rem;">
+            <label for="question-${index}" style="display: block; font-weight: 600; margin-bottom: 0.5rem;">
+                ${escapeHtml(q.question)}
+            </label>
+            <input
+                type="text"
+                id="question-${index}"
+                placeholder="${escapeHtml(q.placeholder || 'Enter your answer...')}"
+                style="width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: 6px; font-size: 1rem;"
+            />
+        </div>
+    `).join('');
+
+    questionsSection.classList.remove('hidden');
+}
+
+// Clear questions panel
+function clearQuestionsPanel() {
+    questionsSection.classList.add('hidden');
+    questionsContainer.innerHTML = '';
+    currentQuestions = [];
+    generateBtn.style.display = '';
 }

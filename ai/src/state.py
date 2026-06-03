@@ -38,6 +38,10 @@ class GraphState(TypedDict, total=False):
     # Deck generation (ppt_generator)
     deck: DeckSpec
 
+    # Image generation (pro/max modes - image_generator)
+    cover_image: str  # Path to cover slide background (relative to slidev/public/)
+    bg_image: str  # Path to content slides background (relative to slidev/public/)
+
     # Output
     deck_id: str
     deck_path: str

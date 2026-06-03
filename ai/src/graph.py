@@ -128,8 +128,58 @@ def run_fast(query: str) -> dict:
         )
 
 
+def run_max(query: str, answers: dict) -> dict:
+    """
+    Run the max mode graph with the given query and user answers to clarifying questions.
+    Uses the SAME fast mode pipeline but merges answers into state for context.
+
+    Args:
+        query: User query string
+        answers: Dict of {question: answer} pairs from clarifying questions
+
+    Returns:
+        Final state dict with deck_id, deck_path, or user_message if rejected
+
+    Raises:
+        AppError: If graph execution fails
+    """
+    logger.info(f"Starting max mode graph | query_length={len(query)} | answers_count={len(answers)}")
+
+    try:
+        # Build same graph as fast mode
+        graph = build_fast_graph()
+
+        # Initial state with answers merged
+        initial_state = {
+            "mode": "max",
+            "query": query,
+            "answers": answers  # Agents will use this for additional context
+        }
+
+        # Invoke graph
+        final_state = graph.invoke(initial_state)
+
+        # Log completion
+        if final_state.get("valid_query") is False:
+            logger.info(f"Max mode completed with rejection | message={final_state.get('user_message', 'N/A')}")
+        else:
+            logger.info(
+                f"Max mode completed successfully | deck_id={final_state.get('deck_id', 'N/A')} | "
+                f"deck_path={final_state.get('deck_path', 'N/A')}"
+            )
+
+        return final_state
+
+    except Exception as e:
+        logger.exception(f"Max mode graph execution failed | query={query[:100]}")
+        raise AppError(
+            message=f"Failed to execute max mode pipeline: {str(e)}",
+            component="graph.run_max"
+        )
+
+
 if __name__ == "__main__":
-    print("=== Test 1: Valid enterprise query ===")
+    print("=== Test 1: Fast mode - Valid enterprise query ===")
     try:
         result1 = run_fast("Meridian Aurora Nexus enterprise AI platform")
         if result1.get("valid_query") is False:
@@ -141,7 +191,7 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Error: {e}")
 
-    print("\n=== Test 2: Invalid general knowledge query ===")
+    print("\n=== Test 2: Fast mode - Invalid general knowledge query ===")
     try:
         result2 = run_fast("what is the capital of India")
         if result2.get("valid_query") is False:
@@ -150,5 +200,22 @@ if __name__ == "__main__":
             print(f"Success!")
             print(f"  deck_id: {result2.get('deck_id')}")
             print(f"  deck_path: {result2.get('deck_path')}")
+    except Exception as e:
+        print(f"Error: {e}")
+
+    print("\n=== Test 3: Max mode - With clarifying answers ===")
+    try:
+        answers = {
+            "audience": "executives",
+            "focus": "ROI and roadmap"
+        }
+        result3 = run_max("Meridian Aurora Nexus enterprise AI platform", answers)
+        if result3.get("valid_query") is False:
+            print(f"Rejected: {result3.get('user_message')}")
+        else:
+            print(f"Success!")
+            print(f"  deck_id: {result3.get('deck_id')}")
+            print(f"  deck_path: {result3.get('deck_path')}")
+            print(f"  answers used: {answers}")
     except Exception as e:
         print(f"Error: {e}")

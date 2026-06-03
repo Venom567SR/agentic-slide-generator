@@ -76,6 +76,17 @@ Web Context (additional research):
 {web_context}
 """
 
+        # Add user answers if present (max mode)
+        answers = state.get("answers")
+        if answers:
+            logger.info(f"PPT generator: incorporating {len(answers)} user answers for tailoring")
+            answers_text = "\n".join([f"- {k}: {v}" for k, v in answers.items()])
+            human_message += f"""
+
+User Requirements (tailor the presentation to these):
+{answers_text}
+"""
+
         human_message += """
 
 Generate exactly 10 slides, each with a heading and 3-5 bullet points. Ground all content in the provided context - use specific facts, names, and numbers from the context. Do NOT invent information."""

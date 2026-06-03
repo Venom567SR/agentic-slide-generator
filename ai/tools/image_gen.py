@@ -111,12 +111,15 @@ def generate_image(prompt: str) -> str:
     logger.info(f"Image generation requested | prompt_length={len(prompt)}")
 
     try:
-        # Get images directory from env
-        slidev_dir = Path(os.getenv("SLIDEV_DIR", "./slidev"))
-        images_dir = slidev_dir / "public" / "images"
+        # Get images directory from env - use Path for proper nesting
+        slidev_dir = Path(os.getenv("SLIDEV_DIR", "./slidev")).resolve()
+        # Use Path division operator to create proper nested structure: slidev/public/images/
+        public_dir = slidev_dir / "public"
+        images_dir = public_dir / "images"
 
-        # Create images directory if it doesn't exist
+        # Create images directory with proper nesting
         images_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Images directory: {images_dir.resolve()}")
 
         # Prepend light-background style wrapper
         full_prompt = LIGHT_BACKGROUND_STYLE + prompt
@@ -127,10 +130,10 @@ def generate_image(prompt: str) -> str:
         cache_path = images_dir / f"{cache_key}.png"
 
         if cache_path.exists():
-            logger.info(f"Cache HIT | key={cache_key} | path={cache_path}")
-            # Return relative path from slidev directory
-            relative_path = cache_path.relative_to(slidev_dir)
-            return str(relative_path).replace('\\', '/')  # Use forward slashes for web
+            logger.info(f"Cache HIT | key={cache_key} | absolute_path={cache_path.resolve()}")
+            # Return web-compatible path: images/<file>.png (relative to public/, used as /images/<file>.png)
+            # Use as_posix() to ensure forward slashes for web paths
+            return f"images/{cache_key}.png"
 
         logger.info(f"Cache MISS | key={cache_key} | generating new image")
 
@@ -191,11 +194,14 @@ def generate_image(prompt: str) -> str:
         # Save PNG bytes
         cache_path.write_bytes(image_bytes)
 
-        logger.info(f"Image generated and cached | key={cache_key} | size={len(image_bytes)} bytes | path={cache_path}")
+        logger.info(
+            f"Image generated and cached | key={cache_key} | size={len(image_bytes)} bytes | "
+            f"absolute_path={cache_path.resolve()}"
+        )
 
-        # Return relative path from slidev directory
-        relative_path = cache_path.relative_to(slidev_dir)
-        return str(relative_path).replace('\\', '/')  # Use forward slashes for web
+        # Return web-compatible path: images/<file>.png (relative to public/, used as /images/<file>.png)
+        # Use as_posix() to ensure forward slashes for web paths
+        return f"images/{cache_key}.png"
 
     except AppError:
         raise
@@ -219,8 +225,9 @@ if __name__ == "__main__":
             return
         if not rel_path:
             return
-        slidev_dir = Path(os.getenv("SLIDEV_DIR", "./slidev"))
-        full_path = slidev_dir / rel_path
+        # rel_path is now "images/<file>.png", need to prepend public/
+        slidev_dir = Path(os.getenv("SLIDEV_DIR", "./slidev")).resolve()
+        full_path = slidev_dir / "public" / rel_path
         if full_path.exists():
             try:
                 with Image.open(full_path) as img:
@@ -275,8 +282,11 @@ if __name__ == "__main__":
     print("=" * 80)
     if cover_path and bg_path:
         print(f"\nGenerated images:")
-        print(f"  1. Cover: slidev/{cover_path}")
-        print(f"  2. Background: slidev/{bg_path}")
+        print(f"  1. Cover: slidev/public/{cover_path}")
+        print(f"  2. Background: slidev/public/{bg_path}")
+        print(f"\nWeb paths (used in slides.md):")
+        print(f"  1. Cover: /{cover_path}")
+        print(f"  2. Background: /{bg_path}")
         print("\nOpen these PNG files to verify:")
         print("  - Light/pale colors suitable for backgrounds")
         print("  - Wide 16:9 landscape aspect ratio")

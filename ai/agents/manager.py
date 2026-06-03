@@ -44,10 +44,18 @@ def manager(state: GraphState) -> dict:
         llm = get_llm(fast_model, temperature=0.3)
         structured_llm = llm.with_structured_output(Outline)
 
+        # Build human message with answers if present (max mode)
+        human_message = f"Create a presentation outline for: {query}"
+        answers = state.get("answers")
+        if answers:
+            logger.info(f"Manager: incorporating {len(answers)} user answers for tailoring")
+            answers_text = "\n".join([f"- {k}: {v}" for k, v in answers.items()])
+            human_message += f"\n\nAdditional user requirements:\n{answers_text}"
+
         # Create messages
         messages = [
             ("system", system_prompt),
-            ("human", f"Create a presentation outline for: {query}")
+            ("human", human_message)
         ]
 
         # Invoke LLM

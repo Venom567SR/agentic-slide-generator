@@ -14,6 +14,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from pathlib import Path
 from backend.mode_handler import generate_deck
+from ai.agents.research_agent import research_agent
+from ai.agents.intent_detector import intent_detector
 from ai.utils import AppError
 from ai.utils.logger import get_logger
 
@@ -43,6 +45,11 @@ app.add_middleware(
 # Request/Response models
 class GenerateRequest(BaseModel):
     mode: str
+    query: str
+    answers: dict = None  # Required for max mode
+
+
+class MaxQuestionsRequest(BaseModel):
     query: str
 
 
@@ -94,9 +101,47 @@ async def get_modes():
             id="fast",
             label="Fast",
             description="Multi-agent deck grounded in Notion"
+        ),
+        ModeInfo(
+            id="max",
+            label="Max",
+            description="Fast + clarifying questions for deeper context"
         )
-        # Pro and max modes to be added later
     ]
+
+
+@app.post("/max/questions")
+async def get_max_questions(request: MaxQuestionsRequest):
+    """
+    Get clarifying questions for max mode.
+    First validates the query, then generates questions.
+
+    Returns:
+        - If query is invalid: {"valid": false, "user_message": "..."}
+        - If successful: {"valid": true, "questions": [...]}
+    """
+    logger.info(f"Max questions endpoint called | query_length={len(request.query)}")
+
+    # Validate query first
+    validation_state = {"query": request.query}
+    validation_result = intent_detector(validation_state)
+
+    if not validation_result.get("valid_query"):
+        logger.info(f"Query rejected in max questions | message={validation_result.get('user_message')}")
+        return {
+            "valid": False,
+            "user_message": validation_result.get("user_message", "Query was rejected")
+        }
+
+    # Generate clarifying questions
+    questions_result = research_agent(request.query)
+
+    logger.info(f"Generated {len(questions_result.questions)} clarifying questions")
+
+    return {
+        "valid": True,
+        "questions": questions_result.questions
+    }
 
 
 @app.post("/generate")
@@ -111,7 +156,7 @@ async def generate(request: GenerateRequest):
     logger.info(f"Generate endpoint called | mode={request.mode} | query_length={len(request.query)}")
 
     # Call mode handler
-    result = generate_deck(request.mode, request.query)
+    result = generate_deck(request.mode, request.query, request.answers)
 
     # Check if query was rejected
     if result.get("valid_query") is False:

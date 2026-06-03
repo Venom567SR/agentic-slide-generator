@@ -95,7 +95,7 @@ def write_deck(deck: DeckSpec, deck_id: str) -> str:
             for bullet in slide.bullets:
                 markdown_parts.append(f"- {_sanitize_markdown_text(bullet)}")
 
-            # Image (if present) - will be used in pro/max modes
+            # Image (if present) - will be used in future modes
             if slide.image_path:
                 markdown_parts.append("")
                 markdown_parts.append(f"![]({slide.image_path})")

@@ -53,10 +53,16 @@ contract is a typed schema.
 | Mode | Agents | Model | Slides | Extra |
 |------|--------|-------|--------|-------|
 | fast | guardrail → manager → context → (web) → ppt | Flash + Pro | 10 | — |
-| pro  | fast + image generation | Flash + Pro | 10 | AI-generated slide images |
-| max  | pro + research | Flash + Pro | 10 | asks clarifying questions first |
+| max  | fast + research | Flash + Pro | 10 | asks clarifying questions first, tailors deck to answers |
 
-(`fast` is fully implemented; `pro` and `max` build on it as supersets.)
+Both modes share one agent/tool layer; the mode selects which agents are active. `max`
+runs a two-phase flow: a research agent first asks 2-3 clarifying questions, then the
+fast pipeline runs with the user's answers folded into the manager and generation steps.
+
+A third mode (`pro`, adding AI-generated slide images via `gemini-2.5-flash-image`) was
+prototyped: image generation and caching work, but Slidev's build step would not render
+the images on the development machine (see Known Issues), so `pro` was scoped out of the
+shipped build. The image-generation tool (`ai/tools/image_gen.py`) remains in the repo.
 
 ### Project layout
 
@@ -164,3 +170,9 @@ Enter a topic, generate, and render the Slidev deck.
     the app uses to render decks for viewing.
   - **Fallbacks:** `backend/render_fallback.py` produces a dependency-free HTML view of any
     deck; the deck also renders normally in Slidev on Linux/WSL or a clean environment.
+- **Slide images don't render via Slidev on this machine.** Images generate and cache
+  correctly (`ai/tools/image_gen.py`), and are served at HTTP 200, but Slidev's default
+  theme does not apply per-slide `background:` frontmatter to the DOM, and the build step
+  rejects content-image imports (`resolves outside server.fs.allow`). Because of this, the
+  image-bearing `pro` mode was scoped out of the shipped build rather than ship a broken
+  render. Fast and Max modes (text decks) render correctly.
