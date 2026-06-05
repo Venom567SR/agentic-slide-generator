@@ -254,6 +254,8 @@ async def build_deck(deck_id: str):
             cwd=str(slidev_dir),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=60,  # 60 second timeout
             shell=False
         )
