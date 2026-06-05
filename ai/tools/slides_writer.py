@@ -104,6 +104,12 @@ def write_deck(deck: DeckSpec, deck_id: str) -> str:
             markdown_parts.append("---")
             markdown_parts.append("")
 
+        # Remove any dangling trailing separator / blank lines so the deck doesn't
+        # end with a "---" that Slidev would render as an empty slide.
+        while markdown_parts and markdown_parts[-1].strip() in ("", "---"):
+            markdown_parts.pop()
+        markdown_parts.append("")  # single clean trailing newline
+
         # Join all parts
         markdown = "\n".join(markdown_parts)
 
